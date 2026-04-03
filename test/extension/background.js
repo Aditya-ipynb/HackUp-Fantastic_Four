@@ -1,72 +1,39 @@
 /**
- * ─── LIFECYCLE MANAGEMENT ───
+ * ─── PHISHGUARD.AI — BACKGROUND SERVICE WORKER ───
+ * Handles side panel lifecycle, message relay, and email detection bridging.
  */
-chrome.runtime.onInstalled.addListener(({ reason }) => {
-    if (reason === "install") {
-        console.log("🛡️ [PhishGuard.AI] Extension Installed. Initializing secure storage...");
-        chrome.storage.local.set({ 
-            scanHistory: [], 
-            authToken: null 
+
+// ─── OPEN SIDE PANEL WHEN TOOLBAR ICON IS CLICKED ───
+chrome.action.onClicked.addListener((tab) => {
+    chrome.sidePanel.open({ tabId: tab.id });
+});
+
+// ─── ENABLE SIDE PANEL ON GMAIL TABS AUTOMATICALLY ───
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tab.url && tab.url.includes('mail.google.com')) {
+        chrome.sidePanel.setOptions({
+            tabId,
+            path: 'popup.html',
+            enabled: true
         });
     }
 });
 
-/**
- * ─── PERSISTENCE (HEARTBEAT) ───
- * MV3 Service Workers shut down after 30s of inactivity. 
- * We use an alarm to "nudge" the worker every minute to stay active for live monitoring.
- */
-chrome.alarms.create('keepAlive', { periodInMinutes: 1 });
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'keepAlive') {
-        console.log('💓 [PhishGuard.AI] Heartbeat: Service Worker is active.');
-    }
-});
-
-/**
- * ─── SILENT AUTHENTICATION ───
- * Attempts to restore the user's session whenever Chrome starts up.
- */
-chrome.runtime.onStartup.addListener(async () => {
-    console.log("🚀 [PhishGuard.AI] Browser started. Restoring session...");
-    const token = await getAuthTokenSilent();
-    if (token) {
-        chrome.storage.local.set({ authToken: token });
-    }
-});
-
-function getAuthTokenSilent() {
-    return new Promise((resolve) => {
-        chrome.identity.getAuthToken({ interactive: false }, (token) => {
-            if (chrome.runtime.lastError || !token) {
-                console.log("⚠️ [Auth] No cached session found.");
-                resolve(null);
-            } else {
-                console.log("✅ [Auth] Session restored successfully.");
-                resolve(token);
-            }
-        });
-    });
-}
-
-/**
- * ─── MESSAGE ROUTING ───
- * Bridges communication between the Content Script (Gmail) and the Extension UI.
- */
+// ─── RELAY EMAIL_OPENED FROM CONTENT SCRIPT → SIDE PANEL ───
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // Forward Gmail email-open events to the Popup or Side Panel
     if (message.type === "EMAIL_OPENED") {
-        console.log("📨 [Background] Relaying target email ID:", message.emailId);
-        // We broadcast this so if the Side Panel is open, it can react immediately
-        chrome.runtime.sendMessage(message);
-    }
+        console.log("📨 [Background] Email opened, ID:", message.emailId);
 
-    // Handle manual auth requests if needed
-    if (message.type === "GET_TOKEN_INTERACTIVE") {
-        chrome.identity.getAuthToken({ interactive: true }, (token) => {
-            sendResponse({ token: token || null });
-        });
-        return true; // Keep channel open for async response
+        // Cache the email ID so the side panel can pick it up even if not open yet
+        chrome.storage.local.set({ pendingEmailId: message.emailId });
+
+        // Auto-open the side panel on the Gmail tab
+        if (sender.tab && sender.tab.id) {
+            chrome.sidePanel.open({ tabId: sender.tab.id });
+        }
+
+        // Relay the message to the side panel if it's already open
+        // (catch silently — it's fine if panel isn't open yet, storage handles it)
+        chrome.runtime.sendMessage(message).catch(() => {});
     }
 });

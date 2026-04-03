@@ -6,14 +6,25 @@ let currentReport = null;
  * ─── INITIALIZATION & EVENT LISTENERS ───
  */
 document.addEventListener('DOMContentLoaded', () => {
+
     // 1. SILENT RE-AUTH: Check for existing session immediately
     chrome.identity.getAuthToken({ interactive: false }, (token) => {
         if (!chrome.runtime.lastError && token) {
             accessToken = token;
             console.log("🛡️ [PhishGuard.AI] Session restored silently.");
-            goTo('v-dash'); 
+
+            // ✅ Check if an email was opened while the panel was closed
+            chrome.storage.local.get(['pendingEmailId'], ({ pendingEmailId }) => {
+                if (pendingEmailId) {
+                    chrome.storage.local.remove('pendingEmailId');
+                    autoScanSpecificEmail(pendingEmailId);
+                } else {
+                    goTo('v-dash');
+                }
+            });
+
         } else {
-            goTo('v-auth'); 
+            goTo('v-auth');
         }
     });
 
@@ -26,17 +37,29 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * ─── AUTOMATIC FORENSIC TRIGGERS ───
- * Listens for messages from content.js when an email is opened in Gmail.
+ * ─── LIVE MESSAGE LISTENER ───
+ * Receives EMAIL_OPENED relayed from background.js when side panel is already open.
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "EMAIL_OPENED") {
-        console.log("🕵️ [Auto-Scan] Target Detected:", message.emailId);
+        console.log("🕵️ [Live Trigger] Email detected:", message.emailId);
+        // Clear pending since we're handling it live right now
+        chrome.storage.local.remove('pendingEmailId');
         autoScanSpecificEmail(message.emailId);
     }
 });
 
+/**
+ * ─── AUTO SCAN A SPECIFIC EMAIL ───
+ * Called automatically when Gmail navigation is detected.
+ */
 async function autoScanSpecificEmail(id) {
+    // Must be signed in to scan
+    if (!accessToken) {
+        console.log("⚠️ [Auto-Scan] No access token yet, skipping.");
+        return;
+    }
+
     const { scanHistory = [] } = await chrome.storage.local.get(['scanHistory']);
     const existing = scanHistory.find(item => item.id === id);
 
@@ -47,7 +70,7 @@ async function autoScanSpecificEmail(id) {
         return;
     }
 
-    // Otherwise, perform a "Just-in-Time" forensic analysis
+    // Otherwise, perform a Just-in-Time forensic analysis
     goTo('v-loading');
     try {
         const res = await fetch(`${BACKEND}/analyze-single`, {
@@ -55,12 +78,14 @@ async function autoScanSpecificEmail(id) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accessToken, emailId: id }),
         });
-        
+
         const data = await res.json();
         if (data.success) {
             const updatedHistory = [...scanHistory, data.result];
             chrome.storage.local.set({ scanHistory: updatedHistory });
             showReport(data.result);
+        } else {
+            throw new Error(data.error || 'Analysis failed');
         }
     } catch (err) {
         console.error("❌ Auto-scan failed:", err);
@@ -81,14 +106,23 @@ function goTo(id) {
 function signIn() {
     const errEl = document.getElementById('authErr');
     if (errEl) errEl.textContent = '';
-    
+
     chrome.identity.getAuthToken({ interactive: true }, (token) => {
         if (chrome.runtime.lastError || !token) {
             if (errEl) errEl.textContent = 'Sign-in failed. Check your connection.';
             return;
         }
         accessToken = token;
-        goTo('v-dash');
+
+        // After signing in, check if there's a pending email to scan immediately
+        chrome.storage.local.get(['pendingEmailId'], ({ pendingEmailId }) => {
+            if (pendingEmailId) {
+                chrome.storage.local.remove('pendingEmailId');
+                autoScanSpecificEmail(pendingEmailId);
+            } else {
+                goTo('v-dash');
+            }
+        });
     });
 }
 
@@ -108,18 +142,18 @@ async function startAnalysis() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accessToken, maxResults: 5, existingIds }),
         });
-        
+
         const data = await res.json();
         if (!data.success) throw new Error(data.error || 'Backend analysis failed');
 
         // Deduplicate: Only add genuinely new results to the dashboard history
         const newResults = data.results.filter(r => !existingIds.includes(r.id));
-        
+
         if (newResults.length > 0) {
             const updatedHistory = [...scanHistory, ...newResults];
-            await chrome.storage.local.set({ 
+            await chrome.storage.local.set({
                 scanHistory: updatedHistory,
-                lastReport: newResults[0] 
+                lastReport: newResults[0]
             });
         }
 
@@ -138,12 +172,12 @@ async function startAnalysis() {
 function renderEmailList(results) {
     const list = document.getElementById('emailList');
     list.innerHTML = '';
-    
+
     results.forEach(r => {
         const score = r.final_risk_score || 0;
         const color = score >= 70 ? '#ff2d55' : score >= 40 ? '#ffd60a' : '#30d158';
-        const bg = score >= 70 ? '#ff2d5511' : score >= 40 ? '#ffd60a11' : '#30d15811';
-        const border = score >= 70 ? '#ff2d5533' : score >= 40 ? '#ffd60a33' : '#30d15833';
+        const bg    = score >= 70 ? '#ff2d5511' : score >= 40 ? '#ffd60a11' : '#30d15811';
+        const border= score >= 70 ? '#ff2d5533' : score >= 40 ? '#ffd60a33' : '#30d15833';
 
         const card = document.createElement('div');
         card.className = 'email-card';
@@ -166,10 +200,10 @@ function showReport(r) {
     currentReport = r;
     const score = r.final_risk_score || 0;
     const color = score >= 70 ? '#ff2d55' : score >= 40 ? '#ffd60a' : '#30d158';
-    const bg = score >= 70 ? '#ff2d5508' : score >= 40 ? '#ffd60a08' : '#30d15808';
-    const border = score >= 70 ? '#ff2d5533' : score >= 40 ? '#ffd60a33' : '#30d15833';
+    const bg    = score >= 70 ? '#ff2d5508' : score >= 40 ? '#ffd60a08' : '#30d15808';
+    const border= score >= 70 ? '#ff2d5533' : score >= 40 ? '#ffd60a33' : '#30d15833';
 
-    // Update SVG Elements
+    // Update SVG Gauge Elements
     document.getElementById('g1').setAttribute('stop-color', color);
     document.getElementById('g2').setAttribute('stop-color', color);
     document.getElementById('gaugeScore').setAttribute('fill', color);
@@ -191,7 +225,7 @@ function showReport(r) {
 
     document.getElementById('rFrom').textContent = r.sender;
     document.getElementById('rSubj').textContent = r.subject;
-    
+
     const fb = document.getElementById('fullBtn');
     fb.style.cssText = `border:1px solid ${border};color:${color}`;
 
@@ -201,8 +235,8 @@ function showReport(r) {
 
 function animateGauge(target, color) {
     const scoreEl = document.getElementById('gaugeScore');
-    const arcEl = document.getElementById('gaugeArc');
-    const dotEl = document.getElementById('gaugeDot');
+    const arcEl   = document.getElementById('gaugeArc');
+    const dotEl   = document.getElementById('gaugeDot');
     const cx = 100, cy = 95, R = 72;
 
     function polarXY(angle) {
