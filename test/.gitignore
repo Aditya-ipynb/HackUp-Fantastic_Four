@@ -9,7 +9,7 @@ node_modules/
 temp_inbox.json
 *.log
 *.sqlite
-
+package-lock.json
 # --- Python Environment ---
 __pycache__/
 *.py[cod]

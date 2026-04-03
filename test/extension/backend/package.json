@@ -1,0 +1,19 @@
+{
+  "name": "phishguard-backend",
+  "version": "1.0.0",
+  "description": "PhishGuard.AI Express backend — Gmail fetch + phishing analysis",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "googleapis": "^140.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
