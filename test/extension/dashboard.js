@@ -147,71 +147,24 @@ function initVectorChart() {
     
     if (vectorChart) vectorChart.destroy();
 
-    vectorChart = new Chart(ctx, {
-        type: currentChartType,
-        data: {
-            labels: scanHistory.map((_, i) => `Scan ${i+1}`),
-            datasets: [{
-                label: 'Risk Score',
-                data: scanHistory.map(s => s.final_risk_score),
-                borderColor: '#ff4d4d',
-                tension: 0.4,
-                fill: true,
-                backgroundColor: 'rgba(255, 77, 77, 0.1)'
-            }]
-        }
-    });
-
-    charts.doughnut = new Chart(ctxDoughnut, {
-        type: 'doughnut',
-        data: {
-            labels: ['Phish', 'Suspicious', 'Safe'],
-            datasets: [{
-                data: [
-                    scanHistory.filter(s => s.final_risk_score >= 70).length,
-                    scanHistory.filter(s => s.final_risk_score >= 40 && s.final_risk_score < 70).length,
-                    scanHistory.filter(s => s.final_risk_score < 40).length
-                ],
-                backgroundColor: ['#ff4d4d', '#ffd60a', '#30d158'],
-                borderWidth: 0
-            }]
-        }
-    });
-
-    if (vectorChart) vectorChart.destroy();
-    initVectorChart();
-}
-
-let map = null;
-function initMap() {
-    if (map) return;
-    map = L.map('map').setView([20, 0], 2);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
-}
-let vectorChart = null;
-let currentChartType = 'bar'; // Default
-
-function initVectorChart() {
-    const ctx = document.getElementById('vectorChart').getContext('2d');
-    
     const datasets = [
         {
             label: 'DNA (Auth)',
-            data: scanHistory.map(s => s.dna_evidence?.auth_score || 0), //
+            data: scanHistory.map(s => s.dna_evidence?.auth_score || 0),
             backgroundColor: '#ff4d4d',
             borderColor: '#ff4d4d',
             hidden: false
         },
         {
             label: 'Links (Typosquat)',
-            data: scanHistory.map(s => s.link_evidence?.link_risk_score || 0), //
+            data: scanHistory.map(s => s.link_evidence?.link_risk_score || 0),
             backgroundColor: '#ffd60a',
             borderColor: '#ffd60a',
             hidden: false
         },
         {
             label: 'Profiling (Social Eng)',
-            data: scanHistory.map(s => s.behavioral_evidence?.manipulation_score || 0), //
+            data: scanHistory.map(s => s.behavioral_evidence?.manipulation_score || 0),
             backgroundColor: '#30d158',
             borderColor: '#30d158',
             hidden: false
@@ -242,18 +195,21 @@ function initVectorChart() {
     });
 
     if (!window.chartListenersSetup) {
-        setupChartListeners();
+        setupVectorControls();
         window.chartListenersSetup = true;
     }
 }
 
 function setupVectorControls() {
     // Switch between Bar and Line
-    document.getElementById('toggleChartType').addEventListener('click', (e) => {
-        currentChartType = currentChartType === 'bar' ? 'line' : 'bar';
-        e.target.textContent = `Switch to ${currentChartType === 'bar' ? 'Line Graph' : 'Bar Chart'}`;
-        initVectorChart();
-    });
+    const toggleBtn = document.getElementById('toggleChartType');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', (e) => {
+            currentChartType = currentChartType === 'bar' ? 'line' : 'bar';
+            e.target.textContent = `Switch to ${currentChartType === 'bar' ? 'Line Graph' : 'Bar Chart'}`;
+            initVectorChart();
+        });
+    }
 
     // Vector Visibility Toggles
     document.querySelectorAll('.vector-toggle input').forEach((cb, index) => {
@@ -271,7 +227,9 @@ function setupVectorControls() {
 
 function initCharts() {
     // Overview Line Chart (Risk Score History)
-    const ctx = document.getElementById('lineChart').getContext('2d');
+    const canvas = document.getElementById('lineChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     new Chart(ctx, {
         type: 'line',
         data: {
@@ -290,6 +248,8 @@ function initCharts() {
 let map = null;
 function initMap() {
     if (map) return;
+    const mapContainer = document.getElementById('map');
+    if (!mapContainer) return;
     map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 }
