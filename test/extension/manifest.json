@@ -7,7 +7,9 @@
     "tabs",
     "storage",
     "activeTab",
-    "identity"
+    "identity",
+    "alarms",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://mail.google.com/*",
@@ -25,9 +27,22 @@
   "action": {
     "default_popup": "popup.html"
   },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
   "web_accessible_resources": [
     {
       "resources": [
