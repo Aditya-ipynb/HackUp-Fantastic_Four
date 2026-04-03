@@ -4,7 +4,6 @@ let currentReport = null;
 
 // Wait for the DOM to load before attaching events
 document.addEventListener('DOMContentLoaded', () => {
-    // Attach click events to buttons (replaces onclick in HTML)
     document.getElementById('signInBtn').addEventListener('click', signIn);
     document.getElementById('startScanBtn').addEventListener('click', startAnalysis);
     document.getElementById('backToDash').addEventListener('click', () => goTo('v-dash'));
@@ -44,7 +43,7 @@ async function startAnalysis() {
     let dots = 0;
     const dotTimer = setInterval(() => {
         dots = (dots + 1) % 4;
-        document.getElementById('dnaText').textContent = 'ANALYZING DNA' + '.'.repeat(dots);
+        document.getElementById('dnaText').textContent = 'AGENTIC SWARM ACTIVE' + '.'.repeat(dots);
     }, 350);
 
     try {
@@ -81,24 +80,27 @@ function renderEmailList(results) {
     list.innerHTML = '';
 
     results.forEach(r => {
-        const color = r.score >= 70 ? '#ff2d55' : r.score >= 40 ? '#ffd60a' : '#30d158';
-        const bg    = r.score >= 70 ? '#ff2d5511' : r.score >= 40 ? '#ffd60a11' : '#30d15811';
-        const border= r.score >= 70 ? '#ff2d5533' : r.score >= 40 ? '#ffd60a33' : '#30d15833';
+        // MAPPED TO NEW AI SCHEMA
+        const score = r.final_risk_score || 0; 
+        const threat = r.threat_level || 'Unknown';
+
+        const color = score >= 70 ? '#ff2d55' : score >= 40 ? '#ffd60a' : '#30d158';
+        const bg    = score >= 70 ? '#ff2d5511' : score >= 40 ? '#ffd60a11' : '#30d15811';
+        const border= score >= 70 ? '#ff2d5533' : score >= 40 ? '#ffd60a33' : '#30d15833';
 
         const card = document.createElement('div');
         card.className = 'email-card';
         card.style.borderColor = border;
         card.innerHTML = `
             <div style="display:flex;align-items:center;gap:10px">
-                <div class="email-score" style="color:${color}">${r.score}%</div>
+                <div class="email-score" style="color:${color}">${score}%</div>
                 <div style="flex:1;min-width:0">
                     <div class="email-subject">${escHtml(r.subject)}</div>
                     <div class="email-sender">${escHtml(r.sender)}</div>
                 </div>
-                <div class="threat-pill" style="background:${bg};border:1px solid ${border};color:${color}">${r.threatLevel}</div>
+                <div class="threat-pill" style="background:${bg};border:1px solid ${border};color:${color}">${escHtml(threat.toUpperCase())}</div>
             </div>`;
         
-        // This is fine for CSP because it's a direct JS reference, not a string in HTML
         card.addEventListener('click', () => showReport(r));
         list.appendChild(card);
     });
@@ -107,9 +109,16 @@ function renderEmailList(results) {
 // ── Report ────────────────────────────────────────────────────────────────────
 function showReport(r) {
     currentReport = r;
-    const color = r.score >= 70 ? '#ff2d55' : r.score >= 40 ? '#ffd60a' : '#30d158';
-    const bg    = r.score >= 70 ? '#ff2d5508' : r.score >= 40 ? '#ffd60a08' : '#30d15808';
-    const border= r.score >= 70 ? '#ff2d5533' : r.score >= 40 ? '#ffd60a33' : '#30d15833';
+    
+    // MAPPED TO NEW AI SCHEMA
+    const score = r.final_risk_score || 0;
+    const threat = r.threat_level || 'Unknown';
+    const evidence = r.key_evidence && r.key_evidence.length > 0 ? r.key_evidence : ['No specific indicators flagged.'];
+    const summary = r.user_friendly_summary || 'Analysis complete.';
+
+    const color = score >= 70 ? '#ff2d55' : score >= 40 ? '#ffd60a' : '#30d158';
+    const bg    = score >= 70 ? '#ff2d5508' : score >= 40 ? '#ffd60a08' : '#30d15808';
+    const border= score >= 70 ? '#ff2d5533' : score >= 40 ? '#ffd60a33' : '#30d15833';
 
     document.getElementById('g1').setAttribute('stop-color', color);
     document.getElementById('g2').setAttribute('stop-color', color);
@@ -117,27 +126,35 @@ function showReport(r) {
     document.getElementById('gaugeDot').setAttribute('fill', color);
 
     const badge = document.getElementById('riskBadge');
-    badge.textContent = (r.score >= 70 ? '⚠ CRITICAL' : r.score >= 40 ? '▲ MODERATE' : '✓ SAFE') + ' THREAT';
+    badge.textContent = (score >= 70 ? '⚠ CRITICAL' : score >= 40 ? '▲ MODERATE' : '✓ SAFE') + ' THREAT';
     badge.style.cssText = `background:${bg};border:1px solid ${border};color:${color};display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:100px;font-size:9px;font-weight:700;letter-spacing:.15em`;
 
     document.getElementById('alertCard').style.cssText = `width:100%;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:5px;background:${bg};border:1px solid ${border}`;
+    
+    // Display the AI's user-friendly summary here
     document.getElementById('alertHead').style.color = color;
-    document.getElementById('alertHead').textContent = r.threatLevel + ' — ' + r.findings[0];
+    document.getElementById('alertHead').textContent = threat.toUpperCase() + ' — ' + summary;
 
+    // Display the AI's key evidence list
     const fl = document.getElementById('findingsList');
-    fl.innerHTML = r.findings.slice(1).map(f =>
+    fl.innerHTML = evidence.map(f =>
         `<div class="finding-item"><div class="finding-dot" style="background:${color}"></div>${escHtml(f)}</div>`
     ).join('');
 
     document.getElementById('rFrom').textContent = r.sender;
-    document.getElementById('rFrom').style.color = r.score >= 70 ? '#ff2d55' : '#64748b';
+    document.getElementById('rFrom').style.color = score >= 70 ? '#ff2d55' : '#64748b';
     document.getElementById('rSubj').textContent = r.subject;
+
+    // Fallback indicator badge (if API limits hit)
+    if (r.is_fallback) {
+       document.getElementById('rSubj').innerHTML += `<br><span style="font-size:10px; color:#ffd60a;">⚠️ Static Engine Fallback Active</span>`;
+    }
 
     const fb = document.getElementById('fullBtn');
     fb.style.cssText = `width:100%;padding:9px;border-radius:10px;font-size:9px;font-weight:700;letter-spacing:.12em;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;background:none;font-family:'JetBrains Mono',monospace;transition:all .2s;border:1px solid ${border};color:${color}`;
 
     goTo('v-report');
-    animateGauge(r.score, color);
+    animateGauge(score, color);
 }
 
 // ── Gauge Animation ───────────────────────────────────────────────────────────
